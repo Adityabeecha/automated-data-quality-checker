@@ -1,0 +1,463 @@
+{
+  "name": "Automated Data Quality Checking and Cleaning Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "binaryPropertyName": "file",
+        "options": {}
+      },
+      "id": "52d9a815-2b9e-4bbe-aa6c-1a477acb3650",
+      "name": "Extract CSV Data",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -5232,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and Analyze CSV Data - Comprehensive Version\nconst items = $input.all();\nconst results = [];\nconst allColumnStats = {};\nconst allIssues = [];\nlet rowIndex = 0;\n\n// Process each row from the CSV\nfor (const item of items) {\n  const row = item.json;\n  const analyzedRow = {};\n  const rowIssues = [];\n  \n  // Process each column in the row\n  for (const [key, value] of Object.entries(row)) {\n    // Standardize column name (lowercase, replace spaces with underscores)\n    const standardizedKey = key.toLowerCase().replace(/\\s+/g, '_');\n    \n    // Initialize column stats if not exists\n    if (!allColumnStats[standardizedKey]) {\n      allColumnStats[standardizedKey] = {\n        originalName: key,\n        standardizedName: standardizedKey,\n        totalCount: 0,\n        missingCount: 0,\n        numericValues: [],\n        dataTypes: new Set(),\n        negativeCount: 0,\n        extremeCount: 0\n      };\n    }\n    \n    allColumnStats[standardizedKey].totalCount++;\n    \n    // Check for missing values\n    const isMissing = value === null || value === undefined || value === '' || \n                      (typeof value === 'string' && value.trim() === '');\n    \n    if (isMissing) {\n      allColumnStats[standardizedKey].missingCount++;\n      rowIssues.push(`Missing value in column: ${key}`);\n      analyzedRow[standardizedKey] = null;\n    } else {\n      // Detect data type\n      const dataType = typeof value;\n      allColumnStats[standardizedKey].dataTypes.add(dataType);\n      \n      // Check for numeric values and flag negatives/extremes\n      const numValue = parseFloat(value);\n      if (!isNaN(numValue) && isFinite(numValue)) {\n        allColumnStats[standardizedKey].numericValues.push(numValue);\n        \n        // Flag negative values\n        if (numValue < 0) {\n          allColumnStats[standardizedKey].negativeCount++;\n          rowIssues.push(`Negative value detected in ${key}: ${numValue}`);\n        }\n        \n        // Flag extreme values (very large or very small)\n        if (Math.abs(numValue) > 1000000) {\n          allColumnStats[standardizedKey].extremeCount++;\n          rowIssues.push(`Extreme value detected in ${key}: ${numValue}`);\n        }\n      }\n      \n      // Store value with standardized key\n      analyzedRow[standardizedKey] = value;\n    }\n  }\n  \n  // Add row metadata\n  analyzedRow._row_index = rowIndex;\n  analyzedRow._row_issues = rowIssues;\n  analyzedRow._row_issue_count = rowIssues.length;\n  \n  // Add row issues to global issues array\n  rowIssues.forEach(issue => {\n    allIssues.push({\n      row: rowIndex,\n      issue: issue\n    });\n  });\n  \n  results.push({ json: analyzedRow });\n  rowIndex++;\n}\n\n// Calculate missing value percentages and detect schema mismatches\nconst columnSummary = [];\nconst schemaMismatches = [];\n\nfor (const [colName, stats] of Object.entries(allColumnStats)) {\n  const missingPercentage = stats.totalCount > 0 \n    ? ((stats.missingCount / stats.totalCount) * 100).toFixed(2) \n    : 0;\n  \n  const dataTypesArray = Array.from(stats.dataTypes);\n  \n  // Detect schema mismatches (columns with multiple data types)\n  if (dataTypesArray.length > 1) {\n    schemaMismatches.push({\n      column: colName,\n      originalName: stats.originalName,\n      dataTypes: dataTypesArray\n    });\n  }\n  \n  columnSummary.push({\n    standardizedName: colName,\n    originalName: stats.originalName,\n    totalCount: stats.totalCount,\n    missingCount: stats.missingCount,\n    missingPercentage: parseFloat(missingPercentage),\n    dataTypes: dataTypesArray,\n    negativeCount: stats.negativeCount,\n    extremeCount: stats.extremeCount,\n    hasIssues: stats.missingCount > 0 || stats.negativeCount > 0 || stats.extremeCount > 0 || dataTypesArray.length > 1\n  });\n}\n\n// Calculate overall statistics\nconst totalRows = results.length;\nconst totalColumns = Object.keys(allColumnStats).length;\nconst columnsWithMissingValues = columnSummary.filter(col => col.missingCount > 0).length;\nconst columnsWithSchemaIssues = schemaMismatches.length;\nconst totalIssuesCount = allIssues.length;\n\n// Create comprehensive summary object\nconst summary = {\n  rowCount: totalRows,\n  columnCount: totalColumns,\n  columnsWithMissingValues: columnsWithMissingValues,\n  columnsWithSchemaIssues: columnsWithSchemaIssues,\n  totalIssues: totalIssuesCount,\n  columnStats: allColumnStats,\n  columnSummary: columnSummary,\n  schemaMismatches: schemaMismatches,\n  issues: allIssues\n};\n\n// Add summary to all items for easy access downstream\nfor (const result of results) {\n  result.json._summary = summary;\n}\n\nreturn results;"
+      },
+      "id": "df2fa811-1cc0-4400-a9c9-12910626e6d2",
+      "name": "Parse and Analyze CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -5008,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clean and Standardize Data - Generic Version\nconst items = $input.all();\n\n// Helper function to check if a value is numeric\nfunction isNumeric(value) {\n  if (value === null || value === undefined || value === '') return false;\n  const num = parseFloat(value);\n  return !isNaN(num) && isFinite(num);\n}\n\n// Helper function to calculate median\nfunction calculateMedian(values) {\n  if (values.length === 0) return 0;\n  const sorted = values.slice().sort((a, b) => a - b);\n  const mid = Math.floor(sorted.length / 2);\n  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];\n}\n\n// Step 1: Analyze all columns to determine if they are numeric or categorical\nconst allKeys = new Set();\nconst columnStats = {};\n\n// First pass: collect all keys and analyze data types\nitems.forEach(item => {\n  Object.keys(item.json).forEach(key => {\n    // Skip internal metadata fields from previous analysis\n    if (key.startsWith('_')) return;\n    \n    allKeys.add(key);\n    if (!columnStats[key]) {\n      columnStats[key] = {\n        numericValues: [],\n        categoricalValues: [],\n        isNumericColumn: true,\n        totalCount: 0,\n        missingCount: 0,\n        nonNumericCount: 0\n      };\n    }\n    \n    const value = item.json[key];\n    columnStats[key].totalCount++;\n    \n    if (value === null || value === undefined || value === '' || (typeof value === 'string' && value.trim() === '')) {\n      columnStats[key].missingCount++;\n    } else if (isNumeric(value)) {\n      columnStats[key].numericValues.push(parseFloat(value));\n    } else {\n      columnStats[key].nonNumericCount++;\n      columnStats[key].categoricalValues.push(value);\n    }\n  });\n});\n\n// Determine if each column is truly numeric (>80% numeric values)\nObject.keys(columnStats).forEach(key => {\n  const stats = columnStats[key];\n  const nonMissingCount = stats.totalCount - stats.missingCount;\n  if (nonMissingCount > 0) {\n    const numericPercentage = (stats.numericValues.length / nonMissingCount) * 100;\n    stats.isNumericColumn = numericPercentage >= 80;\n  } else {\n    stats.isNumericColumn = false;\n  }\n});\n\n// Step 2: Calculate median for numeric columns\nconst columnMedians = {};\nObject.keys(columnStats).forEach(key => {\n  if (columnStats[key].isNumericColumn && columnStats[key].numericValues.length > 0) {\n    columnMedians[key] = calculateMedian(columnStats[key].numericValues);\n  }\n});\n\n// Get summary from first item if it exists\nconst originalSummary = items.length > 0 && items[0].json._summary ? items[0].json._summary : null;\n\n// Step 3-7: Clean and standardize each item\nconst cleanedItems = items.map((item, index) => {\n  const cleanedData = {};\n  let totalFields = 0;\n  let cleanedFields = 0;\n  let filledFields = 0;\n  const cleaningActions = [];\n  \n  allKeys.forEach(key => {\n    totalFields++;\n    let value = item.json[key];\n    let originalValue = value;\n    \n    // Handle missing values\n    if (value === null || value === undefined || value === '' || (typeof value === 'string' && value.trim() === '')) {\n      filledFields++;\n      \n      if (columnStats[key].isNumericColumn) {\n        // Fill missing numeric values with median\n        value = columnMedians[key] || 0;\n        cleaningActions.push('Filled missing numeric value in \\'' + key + '\\' with median: ' + value);\n      } else {\n        // Fill missing categorical values with 'Unknown'\n        value = 'Unknown';\n        cleaningActions.push('Filled missing categorical value in \\'' + key + '\\' with \\'Unknown\\'');\n      }\n    } else {\n      // Trim whitespace from all string values\n      if (typeof value === 'string') {\n        value = value.trim();\n        \n        // Convert numeric-looking strings to actual numbers\n        if (columnStats[key].isNumericColumn && isNumeric(value)) {\n          const numValue = parseFloat(value);\n          if (originalValue !== numValue) {\n            cleaningActions.push('Converted \\'' + key + '\\' from string to number: ' + numValue);\n          }\n          value = numValue;\n        }\n      }\n      cleanedFields++;\n    }\n    \n    // Convert all values to strings for type consistency in duplicate detection\n    cleanedData[key] = String(value);\n  });\n  \n  // Calculate per-row data quality score (0-100)\n  const qualityScore = totalFields > 0 ? Math.round((cleanedFields / totalFields) * 100) : 0;\n  \n  // Return cleaned data with minimal metadata\n  return {\n    json: {\n      ...cleanedData,\n      _dataQualityScore: qualityScore,\n      _fieldsTotal: totalFields,\n      _fieldsCleaned: cleanedFields,\n      _fieldsFilled: filledFields,\n      _cleaningActions: cleaningActions\n    }\n  };\n});\n\n// Store summary and column stats separately for downstream nodes to access\n// Add them ONLY to the first item to avoid duplication\nif (cleanedItems.length > 0) {\n  if (originalSummary) {\n    cleanedItems[0].json._summary = originalSummary;\n  }\n  \n  cleanedItems[0].json._columnStats = Object.keys(columnStats).map(key => ({\n    columnName: key,\n    type: columnStats[key].isNumericColumn ? 'numeric' : 'categorical',\n    totalCount: columnStats[key].totalCount,\n    missingCount: columnStats[key].missingCount,\n    missingPercentage: ((columnStats[key].missingCount / columnStats[key].totalCount) * 100).toFixed(2) + '%',\n    median: columnMedians[key] || null\n  }));\n}\n\nreturn cleanedItems;"
+      },
+      "id": "d8632eef-039f-44e7-9ead-6cab229b86b5",
+      "name": "Clean and Standardize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4784,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate comprehensive data quality score\nlet qualityScore = 100;\nconst deductions = [];\n\n// Get all items from previous node\nconst items = $input.all();\n\nif (items.length === 0) {\n  return [{ \n    json: { \n      qualityScore: 0, \n      qualityLevel: 'Failed',\n      deductions: ['No data to analyze'], \n      status: 'failed',\n      qualityMetrics: {\n        totalRows: 0,\n        duplicateCount: 0,\n        duplicatePercentage: '0.00',\n        schemaMismatches: 0,\n        numericIssues: 0\n      }\n    } \n  }];\n}\n\n// Retrieve metadata from previous nodes\nconst firstItem = items[0].json;\nconst summary = firstItem._summary || {};\nconst totalRows = summary.rowCount || items.length;\nconst columnSummary = summary.columnSummary || [];\nconst schemaMismatches = (summary.schemaMismatches || []).length;\n\n// Count total issues across all rows\nlet totalNumericIssues = 0;\nlet totalMissingValues = 0;\n\nfor (const item of items) {\n  const rowIssues = item.json._row_issues || [];\n  \n  // Count numeric issues (negative values, extreme values)\n  const numericIssueCount = rowIssues.filter(function(issue) {\n    return issue.includes('Negative value') || issue.includes('Extreme value');\n  }).length;\n  totalNumericIssues += numericIssueCount;\n  \n  // Count missing values\n  const missingIssueCount = rowIssues.filter(function(issue) {\n    return issue.includes('Missing value');\n  }).length;\n  totalMissingValues += missingIssueCount;\n}\n\n// Calculate duplicate count (difference between original and current row count)\nconst currentRowCount = items.length;\nconst duplicateCount = Math.max(0, totalRows - currentRowCount);\nconst duplicatePercentage = totalRows > 0 ? (duplicateCount / totalRows) * 100 : 0;\n\n// 1. Check for columns with more than 30% missing values\nconst missingValueThreshold = 30;\nfor (const column of columnSummary) {\n  const missingPercentage = parseFloat(column.missingPercentage);\n  if (missingPercentage > missingValueThreshold) {\n    const deduction = Math.min(15, Math.floor(missingPercentage / 10));\n    qualityScore -= deduction;\n    deductions.push(\"Column '\" + column.originalName + \"' has \" + missingPercentage.toFixed(1) + \"% missing values (-\" + deduction + \" points)\");\n  }\n}\n\n// 2. Check for duplicate rows above 5%\nconst duplicateThreshold = 5;\nif (duplicatePercentage > duplicateThreshold) {\n  const deduction = Math.min(20, Math.floor(duplicatePercentage * 2));\n  qualityScore -= deduction;\n  deductions.push(duplicatePercentage.toFixed(1) + \"% duplicate rows detected (-\" + deduction + \" points)\");\n}\n\n// 3. Check for schema mismatches\nif (schemaMismatches > 0) {\n  const deduction = Math.min(15, schemaMismatches * 3);\n  qualityScore -= deduction;\n  deductions.push(schemaMismatches + \" schema mismatches found (columns with inconsistent data types) (-\" + deduction + \" points)\");\n}\n\n// 4. Check for critical numeric issues\nif (totalNumericIssues > 0) {\n  const deduction = Math.min(20, Math.floor(totalNumericIssues / 5) * 2);\n  qualityScore -= deduction;\n  deductions.push(totalNumericIssues + \" critical numeric issues detected (negative or extreme values) (-\" + deduction + \" points)\");\n}\n\n// Ensure score doesn't go below 0\nqualityScore = Math.max(0, qualityScore);\n\n// Determine quality level\nlet qualityLevel;\nif (qualityScore >= 90) {\n  qualityLevel = 'Excellent';\n} else if (qualityScore >= 75) {\n  qualityLevel = 'Good';\n} else if (qualityScore >= 60) {\n  qualityLevel = 'Fair';\n} else {\n  qualityLevel = 'Poor';\n}\n\n// Return a single item with comprehensive quality metrics\nreturn [{\n  json: {\n    qualityScore: qualityScore,\n    qualityLevel: qualityLevel,\n    deductions: deductions,\n    qualityMetrics: {\n      totalRows: totalRows,\n      currentRows: currentRowCount,\n      duplicateCount: duplicateCount,\n      duplicatePercentage: duplicatePercentage.toFixed(2),\n      schemaMismatches: schemaMismatches,\n      numericIssues: totalNumericIssues,\n      totalMissingValues: totalMissingValues,\n      columnsAnalyzed: columnSummary.length\n    },\n    columnDetails: columnSummary,\n    schemaMismatchDetails: summary.schemaMismatches || [],\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "71187cf2-3b83-46f9-8dcd-d2fe9de64a0c",
+      "name": "Calculate Quality Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4336,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.qualityScore }}",
+              "rightValue": "80",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c5dc8d1c-e264-41b4-ba9b-0d5dcb6d39f3",
+      "name": "Quality Score Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -4112,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "decision",
+              "value": "Auto-Approved",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "decision_reason",
+              "value": "Quality score meets or exceeds threshold",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "80ba857c-8e55-46b4-bf83-04aee9145b84",
+      "name": "Mark as Auto-Approved",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3888,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "decision",
+              "value": "Manual Review Required",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "decision_reason",
+              "value": "Quality score below threshold",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cf772a79-0f14-4032-9682-94ce0170c895",
+      "name": "Mark for Manual Review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3888,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare cleaned rows for CSV conversion\n// Retrieve the cleaned data from Remove Duplicate Rows node\n\nconst cleanedItems = $('Remove Duplicate Rows').all();\nconst outputItems = [];\n\n// Process each cleaned item and remove metadata\nfor (const item of cleanedItems) {\n  const cleanedRow = {};\n  \n  // Copy all fields except those starting with underscore\n  for (const [key, value] of Object.entries(item.json)) {\n    if (!key.startsWith('_')) {\n      cleanedRow[key] = value;\n    }\n  }\n  \n  // Add as individual item for CSV conversion\n  outputItems.push({\n    json: cleanedRow\n  });\n}\n\nreturn outputItems;"
+      },
+      "id": "9642c154-2ab2-45f0-af11-5f024a6d1d21",
+      "name": "Prepare Cleaned Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3664,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "fileName": "cleaned_data.csv",
+          "headerRow": true
+        }
+      },
+      "id": "88e86126-64c3-420e-9d60-0dc1b32c90dd",
+      "name": "Generate Cleaned CSV",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -3440,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "report_type",
+              "value": "Data Quality Report",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "rows_before",
+              "value": "={{ $('Parse and Analyze CSV').first().json._summary.rowCount }}",
+              "type": "number"
+            },
+            {
+              "id": "id-3",
+              "name": "rows_after",
+              "value": "={{ $('Remove Duplicate Rows').all().length }}",
+              "type": "number"
+            },
+            {
+              "id": "id-4",
+              "name": "duplicates_removed",
+              "value": "={{ $('Calculate Quality Score').item.json.qualityMetrics.duplicateCount }}",
+              "type": "number"
+            },
+            {
+              "id": "id-5",
+              "name": "issues_found",
+              "value": "={{ $('Calculate Quality Score').item.json.deductions }}",
+              "type": "array"
+            },
+            {
+              "id": "id-6",
+              "name": "quality_score",
+              "value": "={{ $('Calculate Quality Score').item.json.qualityScore }}",
+              "type": "number"
+            },
+            {
+              "id": "id-7",
+              "name": "decision",
+              "value": "={{ $json.decision }}",
+              "type": "string"
+            },
+            {
+              "id": "id-8",
+              "name": "decision_reason",
+              "value": "={{ $json.decision_reason }}",
+              "type": "string"
+            },
+            {
+              "id": "id-9",
+              "name": "cleaned_csv_filename",
+              "value": "cleaned_data.csv",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "abdad7d3-2711-4e7a-a0e7-84b2a36895d2",
+      "name": "Build Final Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3216,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "CSV Data Quality Checker",
+        "formDescription": "Upload a CSV file to automatically check and clean data quality issues",
+        "formFields": {
+          "values": [
+            {
+              "fieldName": "file",
+              "fieldLabel": "Upload CSV File",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".csv",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Your CSV file has been processed! The cleaned data and quality report have been generated."
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.4,
+      "position": [
+        -5456,
+        -96
+      ],
+      "id": "f0c10f73-65f6-4291-8551-b8fc8b5badea",
+      "name": "On form submission",
+      "webhookId": "57a2d4c9-da30-4b5d-9d24-9057bd33d5f6"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst seen = new Set();\nconst uniqueItems = [];\n\n// Get all non-metadata field names from first item\nconst dataFields = [];\nif (items.length > 0) {\n  for (const key of Object.keys(items[0].json)) {\n    if (!key.startsWith('_')) {\n      dataFields.push(key);\n    }\n  }\n}\n\n// Process each item\nfor (const item of items) {\n  // Create a signature from only the data fields\n  const values = [];\n  for (const field of dataFields) {\n    values.push(String(item.json[field] || ''));\n  }\n  const signature = values.join('|');\n  \n  // Only add if we haven't seen this signature before\n  if (!seen.has(signature)) {\n    seen.add(signature);\n    uniqueItems.push(item);\n  }\n}\n\nreturn uniqueItems;"
+      },
+      "id": "844ba159-0fe7-406b-b12a-6bc71aaaf097",
+      "name": "Remove Duplicate Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4560,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate HTML Quality Report with Download Instructions\nconst reportData = $input.first().json;\nconst csvBinary = $('Generate Cleaned CSV').first().binary;\n\n// Extract quality metrics\nconst qualityScore = reportData.quality_score || 0;\nconst qualityLevel = reportData.qualityLevel || 'Unknown';\nconst decision = reportData.decision || 'N/A';\nconst decisionReason = reportData.decision_reason || 'N/A';\nconst rowsBefore = reportData.rows_before || 0;\nconst rowsAfter = reportData.rows_after || 0;\nconst duplicatesRemoved = reportData.duplicates_removed || 0;\nconst issuesFound = reportData.issues_found || [];\n\n// Determine quality color\nlet qualityColor = '#dc3545'; // red for poor\nif (qualityScore >= 90) {\n  qualityColor = '#28a745'; // green for excellent\n} else if (qualityScore >= 75) {\n  qualityColor = '#17a2b8'; // blue for good\n} else if (qualityScore >= 60) {\n  qualityColor = '#ffc107'; // yellow for fair\n}\n\n// Determine decision color\nconst decisionColor = decision === 'Auto-Approved' ? '#28a745' : '#ffc107';\n\n// Convert CSV binary to base64 data URL for download\nconst csvDataUrl = 'data:text/csv;base64,' + csvBinary.data.data;\n\n// Build HTML report with embedded download functionality\nconst htmlReport = `\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Data Quality Report</title>\n  <style>\n    * {\n      margin: 0;\n      padding: 0;\n      box-sizing: border-box;\n    }\n    body {\n      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;\n      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n      padding: 20px;\n      min-height: 100vh;\n    }\n    .container {\n      max-width: 900px;\n      margin: 0 auto;\n      background: white;\n      border-radius: 12px;\n      box-shadow: 0 10px 40px rgba(0,0,0,0.2);\n      overflow: hidden;\n    }\n    .header {\n      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n      color: white;\n      padding: 30px;\n      text-align: center;\n    }\n    .header h1 {\n      font-size: 32px;\n      margin-bottom: 10px;\n    }\n    .header p {\n      font-size: 16px;\n      opacity: 0.9;\n    }\n    .content {\n      padding: 30px;\n    }\n    .download-section {\n      background: #e7f3ff;\n      border: 2px solid #2196F3;\n      border-radius: 8px;\n      padding: 20px;\n      margin-bottom: 30px;\n      text-align: center;\n    }\n    .download-section h3 {\n      color: #1976D2;\n      margin-bottom: 15px;\n      font-size: 20px;\n    }\n    .download-btn {\n      display: inline-block;\n      background: #2196F3;\n      color: white;\n      padding: 12px 30px;\n      border-radius: 6px;\n      text-decoration: none;\n      font-weight: bold;\n      margin: 10px;\n      transition: background 0.3s;\n      cursor: pointer;\n      border: none;\n      font-size: 16px;\n    }\n    .download-btn:hover {\n      background: #1976D2;\n    }\n    .download-btn.secondary {\n      background: #4CAF50;\n    }\n    .download-btn.secondary:hover {\n      background: #45a049;\n    }\n    .score-section {\n      text-align: center;\n      margin-bottom: 30px;\n      padding: 30px;\n      background: #f8f9fa;\n      border-radius: 8px;\n    }\n    .score-circle {\n      width: 150px;\n      height: 150px;\n      border-radius: 50%;\n      background: ${qualityColor};\n      color: white;\n      display: flex;\n      flex-direction: column;\n      align-items: center;\n      justify-content: center;\n      margin: 0 auto 20px;\n      box-shadow: 0 4px 15px rgba(0,0,0,0.2);\n    }\n    .score-number {\n      font-size: 48px;\n      font-weight: bold;\n    }\n    .score-label {\n      font-size: 14px;\n      text-transform: uppercase;\n      letter-spacing: 1px;\n    }\n    .quality-level {\n      font-size: 24px;\n      font-weight: bold;\n      color: ${qualityColor};\n      margin-top: 10px;\n    }\n    .metrics-grid {\n      display: grid;\n      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));\n      gap: 20px;\n      margin-bottom: 30px;\n    }\n    .metric-card {\n      background: #f8f9fa;\n      padding: 20px;\n      border-radius: 8px;\n      border-left: 4px solid #667eea;\n    }\n    .metric-label {\n      font-size: 14px;\n      color: #6c757d;\n      margin-bottom: 8px;\n      text-transform: uppercase;\n      letter-spacing: 0.5px;\n    }\n    .metric-value {\n      font-size: 28px;\n      font-weight: bold;\n      color: #212529;\n    }\n    .decision-section {\n      background: ${decisionColor};\n      color: white;\n      padding: 20px;\n      border-radius: 8px;\n      margin-bottom: 30px;\n    }\n    .decision-section h3 {\n      font-size: 20px;\n      margin-bottom: 10px;\n    }\n    .decision-section p {\n      font-size: 16px;\n      opacity: 0.95;\n    }\n    .issues-section {\n      margin-top: 30px;\n    }\n    .issues-section h3 {\n      font-size: 20px;\n      margin-bottom: 15px;\n      color: #212529;\n    }\n    .issue-list {\n      list-style: none;\n    }\n    .issue-item {\n      background: #fff3cd;\n      border-left: 4px solid #ffc107;\n      padding: 12px 15px;\n      margin-bottom: 10px;\n      border-radius: 4px;\n      font-size: 14px;\n    }\n    .no-issues {\n      background: #d4edda;\n      border-left: 4px solid #28a745;\n      padding: 12px 15px;\n      border-radius: 4px;\n      color: #155724;\n    }\n    .footer {\n      text-align: center;\n      padding: 20px;\n      background: #f8f9fa;\n      color: #6c757d;\n      font-size: 14px;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>📊 Data Quality Report</h1>\n      <p>Automated CSV Analysis & Cleaning Results</p>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"download-section\">\n        <h3>📥 Download Your Files</h3>\n        <p style=\"margin-bottom: 15px; color: #555;\">Click the buttons below to download your cleaned data and this report</p>\n        <button class=\"download-btn\" onclick=\"downloadCSV()\">Download Cleaned CSV</button>\n        <button class=\"download-btn secondary\" onclick=\"downloadReport()\">Download This Report</button>\n      </div>\n      \n      <div class=\"score-section\">\n        <div class=\"score-circle\">\n          <div class=\"score-number\">${qualityScore}</div>\n          <div class=\"score-label\">Score</div>\n        </div>\n        <div class=\"quality-level\">${qualityLevel} Quality</div>\n      </div>\n      \n      <div class=\"metrics-grid\">\n        <div class=\"metric-card\">\n          <div class=\"metric-label\">Rows Before</div>\n          <div class=\"metric-value\">${rowsBefore}</div>\n        </div>\n        <div class=\"metric-card\">\n          <div class=\"metric-label\">Rows After</div>\n          <div class=\"metric-value\">${rowsAfter}</div>\n        </div>\n        <div class=\"metric-card\">\n          <div class=\"metric-label\">Duplicates Removed</div>\n          <div class=\"metric-value\">${duplicatesRemoved}</div>\n        </div>\n      </div>\n      \n      <div class=\"decision-section\">\n        <h3>📋 Decision: ${decision}</h3>\n        <p>${decisionReason}</p>\n      </div>\n      \n      <div class=\"issues-section\">\n        <h3>🔍 Issues Found</h3>\n        ${issuesFound.length > 0 ? `\n          <ul class=\"issue-list\">\n            ${issuesFound.map(issue => `<li class=\"issue-item\">⚠️ ${issue}</li>`).join('')}\n          </ul>\n        ` : '<div class=\"no-issues\">✅ No critical issues detected!</div>'}\n      </div>\n    </div>\n    \n    <div class=\"footer\">\n      Generated on ${new Date().toLocaleString()}\n    </div>\n  </div>\n  \n  <script>\n    // Embedded CSV data\n    const csvData = '${csvDataUrl}';\n    \n    function downloadCSV() {\n      const link = document.createElement('a');\n      link.href = csvData;\n      link.download = 'cleaned_data.csv';\n      document.body.appendChild(link);\n      link.click();\n      document.body.removeChild(link);\n    }\n    \n    function downloadReport() {\n      const htmlContent = document.documentElement.outerHTML;\n      const blob = new Blob([htmlContent], { type: 'text/html' });\n      const url = URL.createObjectURL(blob);\n      const link = document.createElement('a');\n      link.href = url;\n      link.download = 'data_quality_report.html';\n      document.body.appendChild(link);\n      link.click();\n      document.body.removeChild(link);\n      URL.revokeObjectURL(url);\n    }\n  </script>\n</body>\n</html>\n`;\n\n// Convert HTML to binary\nconst htmlBuffer = Buffer.from(htmlReport, 'utf-8');\n\n// Return HTML report with embedded CSV data for download\nreturn [{\n  json: {\n    report_generated: true,\n    timestamp: new Date().toISOString(),\n    quality_score: qualityScore,\n    quality_level: qualityLevel,\n    decision: decision,\n    rows_before: rowsBefore,\n    rows_after: rowsAfter,\n    duplicates_removed: duplicatesRemoved\n  },\n  binary: {\n    data: {\n      data: htmlBuffer.toString('base64'),\n      mimeType: 'text/html',\n      fileName: 'data_quality_report.html'\n    }\n  }\n}];"
+      },
+      "id": "40ed4061-3f1b-42e2-beac-cac21d089aa2",
+      "name": "Generate HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2992,
+        -96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Extract CSV Data": {
+      "main": [
+        [
+          {
+            "node": "Parse and Analyze CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Analyze CSV": {
+      "main": [
+        [
+          {
+            "node": "Clean and Standardize Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean and Standardize Data": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicate Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicate Rows": {
+      "main": [
+        [
+          {
+            "node": "Calculate Quality Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Quality Score": {
+      "main": [
+        [
+          {
+            "node": "Quality Score Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality Score Check": {
+      "main": [
+        [
+          {
+            "node": "Mark as Auto-Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark for Manual Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Auto-Approved": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cleaned Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark for Manual Review": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cleaned Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cleaned Rows": {
+      "main": [
+        [
+          {
+            "node": "Generate Cleaned CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Cleaned CSV": {
+      "main": [
+        [
+          {
+            "node": "Build Final Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Extract CSV Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Final Report": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "a9847137-dde8-49c4-8c52-8cd65e90f166",
+  "meta": {
+    "instanceId": "7c19e542c17877eb9a058a7f92813a06bde2de4bec7ef24eaa5254ba5dfb08df"
+  },
+  "id": "iBPXcXQWvnXWqJmo",
+  "tags": []
+}
